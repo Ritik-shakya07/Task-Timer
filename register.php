@@ -1,101 +1,110 @@
 <?php
 session_start();
 require_once 'db.php';
-// Include your PHPMailer files (adjust the paths as needed)
+// Include PHPMailer
 require 'PHPMailer/src/PHPMailer.php';
 require 'PHPMailer/src/SMTP.php';
 require 'PHPMailer/src/Exception.php';
-
-
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
-$stage = isset($_SESSION['stage']) ? $_SESSION['stage'] : 'register';
+// Determine current stage
+$stage = $_SESSION['stage'] ?? 'register';
 $message = "";
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    // Registration submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Handle registration form submission
     if (isset($_POST['register'])) {
         $username = trim($_POST['username']);
         $email = trim($_POST['email']);
         $password = $_POST['password'];
         $confirm = $_POST['confirm_password'];
 
-        // Password rules: at least 8 characters, one uppercase letter, one special character.
+        // Password rules check
         if (!preg_match('/^(?=.*[A-Z])(?=.*\W).{8,}$/', $password)) {
-            $message = "Password must be at least 8 characters long, include one uppercase letter and one special character.";
+            $message = "Password must be at least 8 characters, include an uppercase letter and a special character.";
         } elseif ($password !== $confirm) {
             $message = "Passwords do not match.";
         } else {
-            // Check if the email is already registered
-            $emailEsc = $conn->real_escape_string($email);
-            $check = $conn->query("SELECT id FROM users WHERE email='$emailEsc'");
-            if ($check->num_rows > 0) {
-                $message = "Email already registered.";
-            } else {
-                // Hash password and generate OTP
-                $hashed = password_hash($password, PASSWORD_DEFAULT);
-                $otp = rand(100000, 999999);
-                $otp_expiration = date("Y-m-d H:i:s", strtotime("+10 minutes"));
+            // Store registration data in session until OTP verified
+            $_SESSION['reg_username'] = $username;
+            $_SESSION['reg_email'] = $email;
+            $_SESSION['reg_password'] = password_hash($password, PASSWORD_DEFAULT);
 
-                $usernameEsc = $conn->real_escape_string($username);
-                $sql = "INSERT INTO users (username, email, password, otp, otp_expiration, is_verified) 
-                        VALUES ('$usernameEsc', '$emailEsc', '$hashed', '$otp', '$otp_expiration', 0)";
-                if ($conn->query($sql) === TRUE) {
-                    // Send OTP using PHPMailer
-                    $mail = new PHPMailer(true);
-                    try {
-                        $mail->isSMTP();
-                        $mail->Host       = 'smtp.gmail.com';
-                        $mail->SMTPAuth   = true;
-                        $mail->Username   = 'ritikshakya7987@gmail.com';
-                        $mail->Password   = 'jqzaedsoemecsmbx';
-                        $mail->SMTPSecure = 'tls'; // or 'ssl'
-                        $mail->Port       = 587;   // or 465 if using SSL
+            // Generate OTP
+            $otp = rand(100000, 999999);
+            $_SESSION['reg_otp'] = $otp;
+            $_SESSION['reg_otp_expiration'] = time() + 600; // 10 minutes
 
-                        $mail->setFrom('no-reply@example.com', 'Task Timer');
-                        $mail->addAddress($email, $username);
-                        $mail->Subject = 'Your Registration OTP';
-                        $mail->Body    = "Your OTP for registration is: " . $otp;
+            // Send OTP via PHPMailer
+            // Send OTP using PHPMailer
+$mail = new PHPMailer(true);
+try {
+    $mail->isSMTP();
+    // Disable SSL certificate checks (allow self‐signed certs)
+    $mail->SMTPOptions = [
+        'ssl' => [
+            'verify_peer'       => false,
+            'verify_peer_name'  => false,
+            'allow_self_signed' => true,
+        ],
+    ];
 
-                        $mail->send();
-                        $_SESSION['email'] = $email;
-                        $_SESSION['stage'] = 'verify';
-                        $stage = 'verify';
-                        $message = "OTP has been sent to your email. Please enter the OTP below to verify your account.";
-                    } catch (Exception $e) {
-                        error_log("Mailer Error: " . $mail->ErrorInfo);
-                        $message = "Error sending OTP. Please try again later.";
-                    }
-                } else {
-                    $message = "Registration error: " . $conn->error;
-                }
+    $mail->Host       = 'smtp.gmail.com';
+    $mail->SMTPAuth   = true;
+    $mail->Username   = 'ritikshakya7987@gmail.com';
+    $mail->Password   = 'jqzaedsoemecsmbx';
+    $mail->SMTPSecure = 'tls';
+    $mail->Port       = 587;
+
+    $mail->setFrom('ritikshakya7987@gmail.com', 'Task Timer');
+    $mail->addAddress($email, $username);
+    $mail->Subject = 'Your Registration OTP';
+    $mail->Body    = "Your OTP for registration is: " . $otp;
+
+    $mail->send();
+
+                // Move to OTP verification stage
+                $_SESSION['stage'] = 'verify';
+                $stage = 'verify';
+                $message = "An OTP has been sent to your email. Please verify to complete registration.";
+            } catch (Exception $e) {
+                $message = "Error sending OTP: " . $mail->ErrorInfo;
             }
         }
-    } 
-    // OTP verification submission
-    else if (isset($_POST['verify'])) {
-        $otp_input = trim($_POST['otp']);
-        $email = $_SESSION['email'];
-        $emailEsc = $conn->real_escape_string($email);
-        $result = $conn->query("SELECT id, otp, otp_expiration FROM users WHERE email='$emailEsc'");
-        if ($result && $result->num_rows > 0) {
-            $row = $result->fetch_assoc();
-            if ($row['otp'] == $otp_input && strtotime($row['otp_expiration']) > time()) {
-                // Update record: mark verified
-                $conn->query("UPDATE users SET is_verified=1, otp=NULL, otp_expiration=NULL WHERE email='$emailEsc'");
-                // Clear session stage and redirect to login page
-                unset($_SESSION['stage']);
-                header("Location: login.php");
-                exit();
-            } else {
-                $message = "Invalid or expired OTP. Please try again.";
-            }
+    }
+
+    
+
+    // Handle OTP verification
+    if (isset($_POST['verify'])) {
+        $inputOtp = trim($_POST['otp']);
+        $storedOtp = $_SESSION['reg_otp'] ?? '';
+        $expires = $_SESSION['reg_otp_expiration'] ?? 0;
+
+        if ($inputOtp == $storedOtp && time() <= $expires) {
+            // Insert user into database
+            $username = $conn->real_escape_string($_SESSION['reg_username']);
+            $email    = $conn->real_escape_string($_SESSION['reg_email']);
+            $password = $conn->real_escape_string($_SESSION['reg_password']);
+            $conn->query("INSERT INTO users (username,email,password,is_verified) VALUES ('{$username}','{$email}','{$password}',1)");
+
+            // Clear session registration vars
+            unset($_SESSION['reg_username'], $_SESSION['reg_email'], $_SESSION['reg_password'],
+                  $_SESSION['reg_otp'], $_SESSION['reg_otp_expiration'], $_SESSION['stage']);
+
+            // Redirect to login
+            header('Location: login.php');
+            exit;
         } else {
-            $message = "User not found.";
+            $message = "Invalid or expired OTP. Please try again.";
         }
     }
 }
+
+
+?>
+
 ?><!DOCTYPE html>
 <html lang="en">
 <head>
@@ -360,6 +369,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 padding: 30px 20px;
             }
         }
+
+        .rules {
+            font-size: 14px;
+            color: var(--text-light);
+            margin-top: -10px;
+            margin-bottom: 20px;
+        }
+        #confirmMessage {
+            font-size: 14px;
+            margin-top: -10px;
+            color: #f87171;
+            text-align: right;
+        }
+        #confirmMessage.match {
+            color: #4ade80;
+        }
     </style>
 </head>
 <body>
@@ -367,26 +392,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <div class="logo-container">
             <div class="logo">Task Timer</div>
         </div>
-        
         <?php if($message): ?>
             <div class="error"><?php echo $message; ?></div>
         <?php endif; ?>
-        
-        <?php if ($stage == 'register'): ?>
-            <h2>Create your account</h2>
-            <form method="POST" action="register.php" id="registrationForm">
+        <?php if ($stage === 'register'): ?>
+            <h2>Create Account</h2>
+            <form method="POST" id="registrationForm">
+                <!-- Username -->
                 <div class="form-group">
                     <label for="username" class="form-label">Username</label>
                     <input type="text" id="username" name="username" class="form-control" required>
                     <span class="input-icon"><i class="fas fa-user"></i></span>
                 </div>
-                
+                <!-- Email -->
                 <div class="form-group">
                     <label for="email" class="form-label">Email Address</label>
                     <input type="email" id="email" name="email" class="form-control" required>
                     <span class="input-icon"><i class="fas fa-envelope"></i></span>
                 </div>
-                
+                <!-- Password -->
                 <div class="form-group">
                     <label for="password" class="form-label">Password</label>
                     <input type="password" id="password" name="password" class="form-control" required>
@@ -394,50 +418,46 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         <i class="fas fa-eye"></i>
                     </span>
                 </div>
-                
+                <!-- Password Rules -->
+                <div class="rules">
+                    Password must be at least 8 characters long, include one uppercase letter and one special character.
+                </div>
+                <!-- Strength Meter -->
                 <div class="strength-meter" id="strengthMeter"></div>
                 <span id="strengthMessage"></span>
-                
+                <!-- Confirm Password -->
                 <div class="form-group">
                     <label for="confirm_password" class="form-label">Confirm Password</label>
                     <input type="password" id="confirm_password" name="confirm_password" class="form-control" required>
                     <span class="password-toggle" onclick="togglePassword('confirm_password')">
                         <i class="fas fa-eye"></i>
                     </span>
+                    <span id="confirmMessage"></span>
                 </div>
-                
                 <button type="submit" name="register" class="btn btn-primary">
                     <i class="fas fa-user-plus"></i> Register
                 </button>
             </form>
-            
-            <div class="divider">
-                <span>or</span>
-            </div>
-            
+            <div class="divider"><span>or</span></div>
             <p>Already have an account? <a href="login.php">Login here</a></p>
+
             
-        <?php elseif ($stage == 'verify'): ?>
-            <h2>Verify Your Email</h2>
+            <?php elseif ($stage === 'verify'): ?>
+                <h2>Verify OTP</h2>
             <p class="otp-info">We've sent a 6-digit code to your email. Please enter it below to verify your account.</p>
-            
-            <form method="POST" action="register.php">
+            <<form method="POST">
                 <div class="form-group">
                     <label for="otp" class="form-label">Verification Code</label>
                     <input type="text" id="otp" name="otp" class="form-control" required maxlength="6" placeholder="Enter 6-digit OTP">
                     <span class="input-icon"><i class="fas fa-key"></i></span>
                 </div>
-                
                 <button type="submit" name="verify" class="btn btn-primary">
                     <i class="fas fa-check-circle"></i> Verify OTP
                 </button>
             </form>
-            <!-- <a href="register.php">back</a> -->
-            
             <p style="margin-top: 20px;">Didn't receive the code? <a href="#">Resend OTP</a></p>
         <?php endif; ?>
     </div>
-
     <script>
         function checkPasswordStrength() {
             var password = document.getElementById("password").value;
@@ -512,6 +532,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 });
             });
         });
+
+        document.getElementById('password')?.addEventListener('input', checkPasswordStrength);
+        /* Password Match Confirmation */
+        const pwd = document.getElementById('password');
+        const cpwd = document.getElementById('confirm_password');
+        const confirmMsg = document.getElementById('confirmMessage');
+        function checkMatch() {
+            if (cpwd.value === '') {
+                confirmMsg.textContent = '';
+                return;
+            }
+            if (pwd.value === cpwd.value) {
+                confirmMsg.textContent = 'Passwords match';
+                confirmMsg.classList.add('match');
+            } else {
+                confirmMsg.textContent = 'Passwords do not match';
+                confirmMsg.classList.remove('match');
+            }
+        }
+        pwd.addEventListener('input', checkMatch);
+        cpwd.addEventListener('input', checkMatch);
+        function togglePassword(id) {
+            const input = document.getElementById(id);
+            const icon = input.nextElementSibling.querySelector('i');
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.replace('fa-eye', 'fa-eye-slash');
+            } else {
+                input.type = 'password';
+                icon.classList.replace('fa-eye-slash', 'fa-eye');
+            }
+        }
     </script>
 </body>
 <!-- </html>

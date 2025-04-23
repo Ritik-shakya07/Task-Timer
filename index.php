@@ -13,7 +13,7 @@ session_start();
   <style>
     /* Global Background & Fonts */
     body {
-      background: linear-gradient(135deg, #e1f5fe, #ffffff);
+      background: linear-gradient(135deg,rgba(169, 192, 202, 0.61),rgba(201, 181, 181, 0.83));
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       margin: 0;
       padding: 0;
@@ -22,7 +22,34 @@ session_start();
       /* Reserve space for fixed header and footer */
       padding-top: 90px;
       padding-bottom: 120px;
+/*       
+      background-color: #f9fafb;
+
+/* Background image 
+background-image: url('clock.jpg');
+
+/* Make it cover the whole window, cropping as needed 
+background-size: cover;
+
+/* Center the image 
+background-position: center center;
+
+/* Fix it so it doesn’t scroll with the content 
+background-attachment: fixed;
+
+/* Optional: add a semi‑transparent overlay so text pops 
+position: relative;
+z-index: 0; */
     }
+
+    body::before {
+    content: "";
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(124, 11, 11, 0.09); /* white at 60% opacity */
+    pointer-events: none;
+    z-index: -1;
+  }
     /* Fixed Top Navigation Bar */
     header {
       position: fixed;
@@ -55,7 +82,7 @@ session_start();
     header .welcome {
       margin-left: 20px;
       font-size: 18px;
-      color: #e0f7fa;
+      color:rgba(175, 191, 194, 0.75);
     }
     header nav a {
       color: #fff;
@@ -78,7 +105,7 @@ session_start();
       max-width: 800px;
       margin: 100px auto 100px auto;
       padding: 20px;
-      background: rgba(255, 255, 255, 0.95);
+      background: rgba(209, 198, 198, 0.89);
       border-radius: 10px;
       box-shadow: 0 4px 8px rgba(0,0,0,0.1);
       text-align: center;
@@ -119,7 +146,7 @@ session_start();
     }
     /* Fixed Footer */
     footer {
-      background: #f1f1f1;
+      background:rgba(202, 192, 192, 0.9);
       color: #000;
       padding: 15px 30px;
       display: flex;
